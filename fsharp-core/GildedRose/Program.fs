@@ -2,12 +2,7 @@
 
 open System.Collections.Generic
 
-type Item =
-    { Name: string
-      SellIn: int
-      Quality: int }
-
-type ShopItem =
+type ItemName =
     | AgedBrie
     | BackstagePasses
     | Sulfuras
@@ -25,27 +20,54 @@ type ShopItem =
         | "Conjured Mana Cake" -> Cake |> Some
         | _ -> None
 
-    member this.Legendary =
+    override this.ToString() =
         match this with
-        | Sulfuras -> true
-        | _ -> false
+            | AgedBrie -> "Aged Brie"
+            | BackstagePasses -> "Backstage passes to a TAFKAL80ETC concert"
+            | Sulfuras -> "Sulfuras, Hand of Ragnaros"
+            | Cake -> "Conjured Mana Cake"
+            | VestofDex -> "+5 Dexterity Vest"
+            | Elixir -> "Elixir of the Mongoose"
 
-    member this.Conjured =
-        match this with
-        | Cake -> true
-        | _ -> false
+type ItemError = InvalidItem of string
+
+type Item =
+    { Name: ItemName
+      SellIn: int
+      Quality: int }
+
+    static member Create name sellIn quality =
+        { Name = name
+          SellIn = sellIn
+          Quality = quality }
+
+    static member TryFrom (maybeName: string) sellIn quality =
+        match maybeName |> ItemName.TryFrom with
+        | Some n -> Item.Create n sellIn quality |> Ok
+        | None -> sprintf "Invalid item: %s" maybeName |> Error
+
 
 module Updaters =
     let standard (item: Item) =
         match item.Quality, item.SellIn with
-        | 0, sellIn -> { item with SellIn = sellIn - 1 }
         | i, 0 ->
             { item with
-                Quality = i - 2
+                Quality = max (i - 2) 0
                 SellIn = item.SellIn - 1 }
         | i, sellIn ->
             { item with
                 Quality = i - 1
+                SellIn = sellIn - 1 }
+
+    let conjured (item: Item) =
+        match item.Quality, item.SellIn with
+        | i, 0 ->
+            { item with
+                Quality = max (i - 4) 0
+                SellIn = item.SellIn - 1 }
+        | i, sellIn ->
+            { item with
+                Quality = max (i - 2) 0
                 SellIn = sellIn - 1 }
 
     let brie (item: Item) =
@@ -54,13 +76,9 @@ module Updaters =
             { item with
                 Quality = quality + 2
                 SellIn = sellIn - 1 }
-        | quality, sellIn when quality = 50 ->
-            { item with
-                Quality = 50
-                SellIn = sellIn - 1 }
         | quality, sellIn ->
             { item with
-                Quality = quality + 1
+                Quality = min (quality + 1) 50
                 SellIn = sellIn - 1 }
 
     let sulfuras (item: Item) = item
@@ -84,28 +102,25 @@ module Updaters =
                 Quality = min (quality + 1) 50
                 SellIn = sellIn - 1 }
 
+module Item =
+    let update (item: Item) =
+        match item.Name with
+        | VestofDex
+        | Elixir -> item |> Updaters.standard
+        | Cake -> item |> Updaters.conjured
+        | AgedBrie -> item |> Updaters.brie
+        | Sulfuras -> item |> Updaters.sulfuras
+        | BackstagePasses -> item |> Updaters.backstagePasses
 
 type GildedRose(items: IList<Item>) =
-    let mutable Items = items
 
-    member __.UpdateQuality() =
+    member val Items = items with get, set
 
-        for i = 0 to Items.Count - 1 do
-
-            let oldItem = Items.[i]
-            let newItem =
-                match oldItem.Name |> ShopItem.TryFrom with
-                | Some VestofDex
-                | Some Elixir
-                | Some Cake -> oldItem |> Updaters.standard
-                | Some AgedBrie -> oldItem |> Updaters.brie
-                | Some Sulfuras -> oldItem |> Updaters.sulfuras
-                | Some BackstagePasses ->  oldItem |> Updaters.backstagePasses
-                | _ -> failwith "we shouldn't be able to get here"
-
-            Items.[i] <- newItem
-        ()
-
+    member this.UpdateQuality() =
+        this.Items <-
+            this.Items
+            |> Seq.map Item.update
+            |> Seq.toArray
 
 module Program =
     [<EntryPoint>]
@@ -114,55 +129,55 @@ module Program =
         let Items = new List<Item>()
 
         Items.Add(
-            { Name = "+5 Dexterity Vest"
+            { Name = ItemName.VestofDex
               SellIn = 10
               Quality = 20 }
         )
 
         Items.Add(
-            { Name = "Aged Brie"
+            { Name = ItemName.AgedBrie
               SellIn = 2
               Quality = 0 }
         )
 
         Items.Add(
-            { Name = "Elixir of the Mongoose"
+            { Name = ItemName.Elixir
               SellIn = 5
               Quality = 7 }
         )
 
         Items.Add(
-            { Name = "Sulfuras, Hand of Ragnaros"
+            { Name = ItemName.Sulfuras
               SellIn = 0
               Quality = 80 }
         )
 
         Items.Add(
-            { Name = "Sulfuras, Hand of Ragnaros"
+            { Name = ItemName.Sulfuras
               SellIn = -1
               Quality = 80 }
         )
 
         Items.Add(
-            { Name = "Backstage passes to a TAFKAL80ETC concert"
+            { Name = ItemName.BackstagePasses
               SellIn = 15
               Quality = 20 }
         )
 
         Items.Add(
-            { Name = "Backstage passes to a TAFKAL80ETC concert"
+            { Name = ItemName.BackstagePasses
               SellIn = 10
               Quality = 49 }
         )
 
         Items.Add(
-            { Name = "Backstage passes to a TAFKAL80ETC concert"
+            { Name = ItemName.BackstagePasses
               SellIn = 5
               Quality = 49 }
         )
 
         Items.Add(
-            { Name = "Conjured Mana Cake"
+            { Name = ItemName.Cake
               SellIn = 3
               Quality = 6 }
         )
@@ -173,8 +188,8 @@ module Program =
             printfn "-------- day %d --------" i
             printfn "name, sellIn, quality"
 
-            for j = 0 to Items.Count - 1 do
-                printfn "%s, %d, %d" Items.[j].Name Items.[j].SellIn Items.[j].Quality
+            for j = 0 to app.Items.Count - 1 do
+                printfn "%O, %d, %d" app.Items.[j].Name app.Items.[j].SellIn app.Items.[j].Quality
 
             printfn ""
             app.UpdateQuality()
