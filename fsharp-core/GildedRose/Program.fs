@@ -2,50 +2,40 @@
 
 open System.Collections.Generic
 
-type ItemName =
-    | AgedBrie
+type ItemError = InvalidItemClass of string
+
+type ItemClass =
+    | Standard
+    | Conjured
+    | Legenday
+    | Vintage
     | BackstagePasses
-    | Sulfuras
-    | Cake
-    | VestofDex
-    | Elixir
 
     static member TryFrom(s: string) =
-        match s with
-        | "+5 Dexterity Vest" -> VestofDex |> Some
-        | "Aged Brie" -> AgedBrie |> Some
-        | "Elixir of the Mongoose" -> Elixir |> Some
-        | "Sulfuras, Hand of Ragnaros" -> Sulfuras |> Some
-        | "Backstage passes to a TAFKAL80ETC concert" -> BackstagePasses |> Some
-        | "Conjured Mana Cake" -> Cake |> Some
-        | _ -> None
-
-    override this.ToString() =
-        match this with
-            | AgedBrie -> "Aged Brie"
-            | BackstagePasses -> "Backstage passes to a TAFKAL80ETC concert"
-            | Sulfuras -> "Sulfuras, Hand of Ragnaros"
-            | Cake -> "Conjured Mana Cake"
-            | VestofDex -> "+5 Dexterity Vest"
-            | Elixir -> "Elixir of the Mongoose"
-
-type ItemError = InvalidItem of string
+        match s.ToLower() with
+        | "standard" -> Standard |> Ok
+        | "conjured" -> Conjured |> Ok
+        | "legendary" -> Legenday |> Ok
+        | "vintage" -> Vintage |> Ok
+        | "backstagepasses" -> BackstagePasses |> Ok
+        | wrong -> sprintf $"Invalid ItemClass: {wrong}" |> Error
 
 type Item =
-    { Name: ItemName
+    { Name: string
+      Class: ItemClass
       SellIn: int
       Quality: int }
 
-    static member Create name sellIn quality =
+    static member Create name clss sellIn quality =
         { Name = name
+          Class = clss
           SellIn = sellIn
           Quality = quality }
 
-    static member TryFrom (maybeName: string) sellIn quality =
-        match maybeName |> ItemName.TryFrom with
-        | Some n -> Item.Create n sellIn quality |> Ok
-        | None -> sprintf "Invalid item: %s" maybeName |> Error
-
+    static member TryFrom name maybeClass sellIn quality =
+        maybeClass
+        |> ItemClass.TryFrom
+        |> Result.map (fun c -> Item.Create name c sellIn quality)
 
 module Updaters =
     let standard (item: Item) =
@@ -70,7 +60,7 @@ module Updaters =
                 Quality = max (i - 2) 0
                 SellIn = sellIn - 1 }
 
-    let brie (item: Item) =
+    let vintage (item: Item) =
         match item.Quality, item.SellIn with
         | quality, sellIn when quality < 50 && sellIn <= 0 ->
             { item with
@@ -81,7 +71,7 @@ module Updaters =
                 Quality = min (quality + 1) 50
                 SellIn = sellIn - 1 }
 
-    let sulfuras (item: Item) = item
+    let legendary (item: Item) = item
 
     let backstagePasses (item: Item) =
         match item.Quality, item.SellIn with
@@ -104,23 +94,20 @@ module Updaters =
 
 module Item =
     let update (item: Item) =
-        match item.Name with
-        | VestofDex
-        | Elixir -> item |> Updaters.standard
-        | Cake -> item |> Updaters.conjured
-        | AgedBrie -> item |> Updaters.brie
-        | Sulfuras -> item |> Updaters.sulfuras
-        | BackstagePasses -> item |> Updaters.backstagePasses
+        item
+        |> (match item.Class with
+            | Standard -> Updaters.standard
+            | Conjured -> Updaters.conjured
+            | Legenday -> Updaters.legendary
+            | Vintage -> Updaters.vintage
+            | BackstagePasses -> Updaters.backstagePasses)
 
 type GildedRose(items: IList<Item>) =
 
     member val Items = items with get, set
 
     member this.UpdateQuality() =
-        this.Items <-
-            this.Items
-            |> Seq.map Item.update
-            |> Seq.toArray
+        this.Items <- this.Items |> Seq.map Item.update |> Seq.toArray
 
 module Program =
     [<EntryPoint>]
@@ -129,55 +116,64 @@ module Program =
         let Items = new List<Item>()
 
         Items.Add(
-            { Name = ItemName.VestofDex
+            { Name = "+5 Dexterity Vest"
+              Class = Standard
               SellIn = 10
               Quality = 20 }
         )
 
         Items.Add(
-            { Name = ItemName.AgedBrie
+            { Name = "Aged Brie"
+              Class = Vintage
               SellIn = 2
               Quality = 0 }
         )
 
         Items.Add(
-            { Name = ItemName.Elixir
+            { Name = "Elixir of the Mongoose"
+              Class = Standard
               SellIn = 5
               Quality = 7 }
         )
 
         Items.Add(
-            { Name = ItemName.Sulfuras
+            { Name = "Sulfuras, Hand of Ragnaros"
+              Class = Legenday
               SellIn = 0
               Quality = 80 }
         )
 
         Items.Add(
-            { Name = ItemName.Sulfuras
+            { Name = "Sulfuras, Hand of Ragnaros"
+              Class = Legenday
               SellIn = -1
               Quality = 80 }
         )
 
         Items.Add(
-            { Name = ItemName.BackstagePasses
+            { Name = "Backstage passes to a TAFKAL80ETC concert"
+              Class = BackstagePasses
               SellIn = 15
               Quality = 20 }
         )
 
         Items.Add(
-            { Name = ItemName.BackstagePasses
+            { Name = "Backstage passes to a TAFKAL80ETC concert"
+              Class = BackstagePasses
               SellIn = 10
               Quality = 49 }
         )
 
         Items.Add(
-            { Name = ItemName.BackstagePasses
+            { Name = "Backstage passes to a TAFKAL80ETC concert"
+              Class = BackstagePasses
               SellIn = 5
               Quality = 49 }
         )
 
         Items.Add(
-            { Name = ItemName.Cake
+            { Name = "Conjured Mana Cake"
+              Class = Conjured
               SellIn = 3
               Quality = 6 }
         )
